@@ -5,7 +5,12 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayV2HTTPResponse;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Base64;
+import java.util.Map;
 
+import static com.mycodefu.ImageProcessor.getVersionInfo;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MainTest {
@@ -44,5 +49,33 @@ class MainTest {
         assertEquals(200, apiGatewayV2HTTPResponse.getStatusCode());
         assertTrue(apiGatewayV2HTTPResponse.getIsBase64Encoded());
         assertEquals(testImageGrayscaled, apiGatewayV2HTTPResponse.getBody());
+    }
+    @Test
+    void handleRequest_grapes_tensor() throws IOException {
+
+        //load /grapes.jpeg into a base64 string
+        byte[] imageBytes = Files.readAllBytes(Paths.get("src/test/resources/grapes.jpeg"));
+        String grapesBase64 = Base64.getEncoder().encodeToString(imageBytes);
+
+        APIGatewayV2HTTPResponse apiGatewayV2HTTPResponse = new Main().handleRequest(APIGatewayV2HTTPEvent.builder()
+                .withRequestContext(APIGatewayV2HTTPEvent.RequestContext.builder()
+                        .withHttp(APIGatewayV2HTTPEvent.RequestContext.Http.builder()
+                                .withMethod("POST")
+                                .build())
+                        .build())
+                .withQueryStringParameters(Map.of("mode", "TensorFlow"))
+                .withBody(grapesBase64)
+                .withIsBase64Encoded(true)
+                .build(), null);
+
+        assertNotNull(apiGatewayV2HTTPResponse);
+        assertEquals(200, apiGatewayV2HTTPResponse.getStatusCode());
+        assertTrue(apiGatewayV2HTTPResponse.getIsBase64Encoded());
+        assertEquals(testImageGrayscaled, apiGatewayV2HTTPResponse.getBody());
+    }
+
+    @Test
+    public void testLocalRunner() throws IOException, InterruptedException {
+        System.out.println(getVersionInfo());
     }
 }

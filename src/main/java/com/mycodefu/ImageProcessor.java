@@ -2,6 +2,7 @@ package com.mycodefu;
 
 import nu.pattern.OpenCV;
 import org.opencv.core.*;
+import org.opencv.dnn.Dnn;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.CascadeClassifier;
@@ -10,7 +11,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
 
 public class ImageProcessor {
     static {
@@ -22,23 +27,69 @@ public class ImageProcessor {
         GreenBlueRedSplit,
         FaceDetection,
         Mandarin,
+        TensorFlow,
     }
 
     public static String processImage(String encodedInputImage, Mode mode) {
         byte[] imageData = Base64.getDecoder().decode(encodedInputImage);
         Mat image = Imgcodecs.imdecode(new MatOfByte(imageData), Imgcodecs.IMREAD_COLOR);
 
-        Mat result = switch (mode) {
-            case Grayscale -> processGrayscale(image);
-            case GreenBlueRedSplit -> processGreenBlueRedSplit(image);
-            case FaceDetection -> processFaceDetection(image);
-            case Mandarin -> processMandarin(image);
-        };
+        Mat result;
+        try {
+            result = switch (mode) {
+                case Grayscale -> processGrayscale(image);
+                case GreenBlueRedSplit -> processGreenBlueRedSplit(image);
+                case FaceDetection -> processFaceDetection(image);
+                case Mandarin -> processMandarin(image);
+                case TensorFlow -> processTensorFlow(image);
+            };
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
 
         MatOfByte matOfByte = new MatOfByte();
         Imgcodecs.imencode(".png", result, matOfByte);
         String encodedImage = Base64.getEncoder().encodeToString(matOfByte.toArray());
         return encodedImage;
+    }
+
+    private static MatOfByte readToMat(String path) {
+        try {
+            byte[] matData = Files.readAllBytes(Path.of(path));
+            //check not empty
+            if (matData.length == 0) {
+                throw new RuntimeException("File %s is empty".formatted(path));
+            }
+
+            MatOfByte mat = new MatOfByte(matData);
+            return mat;
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static Mat processTensorFlow(Mat image) throws IOException {
+        MatOfByte graph = readToMat("model/frozen_inference_graph.pb");
+        MatOfByte config = readToMat("model/fruit_label_map.pbtxt");
+
+        var net = Dnn.readNetFromTensorflow(
+                graph,
+                config
+        );
+        if (net.empty()) {
+            throw new RuntimeException("Failed to load the model. Check the model path and compatibility.");
+        }
+
+        var blob = Dnn.blobFromImage(image, 1.0, new Size(300, 300), new Scalar(0, 0, 0), true, false);
+
+        net.setInput(blob);
+        var detections = net.forward();
+
+        //draw to image
+        System.out.println(detections.dump());
+
+        //todo: implement tensorflow
+        return image;
     }
 
     private static Mat processMandarin(Mat image) {
@@ -257,5 +308,10 @@ public class ImageProcessor {
         Mat grayImage = new Mat();
         Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
         return grayImage;
+    }
+
+    public static String getVersionInfo() {
+        String buildInfo = Core.getBuildInformation();
+        return buildInfo;
     }
 }
